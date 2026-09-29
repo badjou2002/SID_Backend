@@ -8,6 +8,7 @@ const {
   logout,
   forgotPassword,
   resetPassword,
+  changePassword
 } = require("../controllers/authController");
 const { protect
  } = require("../middlewares/authMiddleware");
@@ -22,6 +23,8 @@ router.post("/verify-email", verifyEmail);
 // Connexion
 router.post("/login", login);
 
+// Modifier le mot de passe
+router.post("/change-password", protect, changePassword);
 
 // Renouveler l'access token
 router.post("/refresh-token", refreshToken);

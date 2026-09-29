@@ -322,7 +322,42 @@ const resetPassword = async ({
 
   return true;
 };
+// CHANGE PASSWORD
+const changePassword = async ({ userId, currentPassword, newPassword }) => {
+  // Recherche de l'utilisateur
+  const user = await User.findById(userId);
 
+  if (!user) {
+    throw new Error('Utilisateur introuvable');
+  }
+
+  // Vérification de l'ancien mot de passe
+  const isPasswordValid = await bcrypt.compare(
+    currentPassword,
+    user.passwordHash
+  );
+
+  if (!isPasswordValid) {
+    throw new Error('Ancien mot de passe incorrect');
+  }
+
+  // Vérification que le nouveau mot de passe est différent
+  if (currentPassword === newPassword) {
+    throw new Error(
+      'Le nouveau mot de passe doit être différent de l’ancien'
+    );
+  }
+
+  // Hashage du nouveau mot de passe
+  user.passwordHash = await bcrypt.hash(newPassword, 12);
+
+  // Invalidation du refresh token pour demander une nouvelle authentification
+  user.refreshToken = null;
+
+  await user.save();
+
+  return true;
+};
 
 module.exports = {
   registerUser,
@@ -331,5 +366,6 @@ module.exports = {
   refreshAccessToken,
   logoutUser,
   forgotPassword,
-  resetPassword
+  resetPassword,
+  changePassword
 };

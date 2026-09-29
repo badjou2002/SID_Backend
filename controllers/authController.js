@@ -214,6 +214,35 @@ const resetPassword = async (req, res) => {
   }
 };
 
+// CHANGE PASSWORD
+const changePassword = async (req, res) => {
+  try {
+    const { currentPassword, newPassword } = req.body;
+
+    // Vérification des données obligatoires
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({
+        message: "L'ancien et le nouveau mot de passe sont obligatoires",
+      });
+    }
+
+    // Appel du service de changement de mot de passe
+    await authService.changePassword({
+      userId: req.user._id,
+      currentPassword,
+      newPassword,
+    });
+
+    return res.status(200).json({
+      message: "Mot de passe modifié avec succès",
+    });
+  } catch (error) {
+    return res.status(400).json({
+      message: error.message,
+    });
+  }
+};
+
 module.exports = {
   register,
   verifyEmail,
@@ -222,4 +251,5 @@ module.exports = {
   logout,
   forgotPassword,
   resetPassword,
+  changePassword
 };
