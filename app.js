@@ -8,7 +8,7 @@ const jobRoutes = require('./routes/jobRoutes');
 const applicationRoutes = require('./routes/applicationRoutes');
 const newsRoutes = require('./routes/newsRoutes');
 const errorHandler = require('./middlewares/errorHandler');
-
+const userRoutes = require('./routes/userRoutes');
 const app = express();
 
 app.use(helmet());
@@ -24,7 +24,7 @@ app.use('/api/profiles', profileRoutes);
 app.use('/api/jobs', jobRoutes);
 app.use('/api/applications', applicationRoutes);
 app.use('/api/news', newsRoutes);
-
+app.use('/api/users', userRoutes);
 app.use((req, res) => {
   res.status(404).json({ success: false, message: 'Route not found' });
 });
