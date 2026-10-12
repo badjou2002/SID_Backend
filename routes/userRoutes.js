@@ -5,7 +5,8 @@ const {
   getUserById,
   updateUser,
   deleteUser,
-  updateUserStatus
+  updateUserStatus,
+  
 } = require('../controllers/userController');
 
 const { protect, authorizeRoles } = require('../middlewares/authMiddleware');
@@ -21,6 +22,32 @@ router.get(
   protect,
   authorizeRoles(Role.ADMIN),
   getAllUsers
+);
+
+ // ==================== MON COMPTE ====================
+
+// Consulter son compte
+router.get(
+  '/me',
+  protect,
+  authorizeRoles(Role.CANDIDATE, Role.RECRUITER),
+  getMyAccount
+);
+
+// Modifier son email
+router.patch(
+  '/me',
+  protect,
+  authorizeRoles(Role.CANDIDATE, Role.RECRUITER),
+  updateMyAccount
+);
+
+// Supprimer son compte
+router.delete(
+  '/me',
+  protect,
+  authorizeRoles(Role.CANDIDATE, Role.RECRUITER),
+  deleteMyAccount
 );
 
 // Voir un utilisateur

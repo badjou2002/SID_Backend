@@ -104,10 +104,84 @@ const updateUserStatus = async (req, res) => {
   }
 };
 
+/**
+ * Consulter son propre compte
+ */
+const getMyAccount = async (req, res) => {
+  try {
+    const user = await userService.getUserById(req.user._id);
+
+    return res.status(200).json({
+      success: true,
+      user
+    });
+  } catch (error) {
+    return res.status(404).json({
+      success: false,
+      message: error.message
+    });
+  }
+};
+
+/**
+ * Modifier son propre compte
+ */
+const updateMyAccount = async (req, res) => {
+  try {
+    // Seul l'email peut être modifié par cette route
+    const { email } = req.body;
+
+    if (!email || typeof email !== 'string') {
+      return res.status(400).json({
+        success: false,
+        message: 'Veuillez fournir un email valide'
+      });
+    }
+
+    const user = await userService.updateUser(
+      req.user._id,
+      { email }
+    );
+
+    return res.status(200).json({
+      success: true,
+      message: 'Compte modifié avec succès',
+      user
+    });
+  } catch (error) {
+    return res.status(400).json({
+      success: false,
+      message: error.message
+    });
+  }
+};
+
+/**
+ * Supprimer son propre compte
+ */
+const deleteMyAccount = async (req, res) => {
+  try {
+    await userService.deleteUser(req.user._id);
+
+    return res.status(200).json({
+      success: true,
+      message: 'Compte supprimé avec succès'
+    });
+  } catch (error) {
+    return res.status(400).json({
+      success: false,
+      message: error.message
+    });
+  }
+};
+
 module.exports = {
   getAllUsers,
   getUserById,
   updateUser,
   deleteUser,
+  getMyAccount,
+  updateMyAccount,
+  deleteMyAccount,
   updateUserStatus
 };

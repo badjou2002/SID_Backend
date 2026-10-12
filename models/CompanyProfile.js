@@ -2,35 +2,49 @@ const mongoose = require('mongoose');
 
 const companyProfileSchema = new mongoose.Schema(
   {
+    // Utilisateur Recruiter propriétaire du profil
     user: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User',
-      required: [true, 'User reference is required'],
+      required: true,
       unique: true
     },
+
+    // Informations de l'entreprise
     companyName: {
       type: String,
-      required: [true, 'Company name is required'],
+      required: true,
       trim: true
     },
-    sector: {
-      type: String,
-      trim: true,
-      default: ''
-    },
-    address: {
-      type: String,
-      trim: true,
-      default: ''
-    },
+
     description: {
       type: String,
-      trim: true,
-      default: ''
+      trim: true
     },
-    isVerified: {
-      type: Boolean,
-      default: false
+
+    industry: {
+      type: String,
+      trim: true
+    },
+
+    address: {
+      type: String,
+      trim: true
+    },
+
+    phone: {
+      type: String,
+      trim: true
+    },
+
+    website: {
+      type: String,
+      trim: true
+    },
+
+    logo: {
+      type: String,
+      default: null
     }
   },
   {
