@@ -11,7 +11,7 @@ const Application = require('../models/Application');
 const Conversation = require('../models/Conversation');
 const Message = require('../models/Message');
 const logger = require('../utils/logger');
-
+const bcrypt = require('bcryptjs');
 const seed = async () => {
   try {
     await connectDB();
@@ -28,24 +28,28 @@ const seed = async () => {
     ]);
     logger.info('Collections cleared');
 
-    const candidateUser = await User.create({
-      email: 'candidate@jci.test',
-      passwordHash: '$2b$10$hashedpasswordplaceholder',
-      role: Role.CANDIDATE
-    });
+const passwordHash = await bcrypt.hash('Test123456', 12);
 
-    const recruiterUser = await User.create({
-      email: 'recruiter@jci.test',
-      passwordHash: '$2b$10$hashedpasswordplaceholder',
-      role: Role.RECRUITER
-    });
+const candidateUser = await User.create({
+  email: 'candidate@jci.test',
+  passwordHash,
+  role: Role.CANDIDATE,
+  isEmailVerified: true
+});
 
-    const adminUser = await User.create({
-      email: 'admin@jci.test',
-      passwordHash: '$2b$10$hashedpasswordplaceholder',
-      role: Role.ADMIN
-    });
+const recruiterUser = await User.create({
+  email: 'recruiter@jci.test',
+  passwordHash,
+  role: Role.RECRUITER,
+  isEmailVerified: true
+});
 
+const adminUser = await User.create({
+  email: 'admin@jci.test',
+  passwordHash,
+  role: Role.ADMIN,
+  isEmailVerified: true
+});
     const candidateProfile = await CandidateProfile.create({
       user: candidateUser._id,
       fullName: 'Amine Ben Salah',

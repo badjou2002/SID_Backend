@@ -21,11 +21,47 @@ const userSchema = new mongoose.Schema(
       required: [true, 'Role is required'],
       default: Role.CANDIDATE
     },
+     // Indique si l'adresse email a été confirmée
+    isEmailVerified: {
+      type: Boolean,
+      default: false,
+    },
+
+    // Code temporaire de confirmation email
+    emailVerificationCode: {
+      type: String,
+      default: null,
+    },
+
+    // Date d'expiration du code de confirmation
+    emailVerificationExpires: {
+      type: Date,
+      default: null,
+    },
+
+    // Code temporaire pour réinitialiser le mot de passe
+    passwordResetCode: {
+      type: String,
+      default: null,
+    },
+
+    // Date d'expiration du code de reset
+    passwordResetExpires: {
+      type: Date,
+      default: null,
+    },
+
+    // Refresh token hashé
+    refreshToken: {
+      type: String,
+      default: null,
+    },
     isActive: {
       type: Boolean,
       default: true
     }
   },
+  
   {
     timestamps: true,
     toJSON: {

@@ -1,76 +1,255 @@
-/**
- * Auth Controller
- * Handles register, login, and me (current user).
- */
+const authService = require("../services/auth.service");
 
-const authService = require('../services/authService');
-const CandidateProfile = require('../models/CandidateProfile');
-const CompanyProfile = require('../models/CompanyProfile');
-const { Role } = require('../enums');
-
-/**
- * POST /api/auth/register
- * Body: { email, password, role }
- */
-const register = async (req, res, next) => {
+const register = async (req, res) => {
   try {
     const { email, password, role } = req.body;
 
+    // Vérification des données obligatoires
     if (!email || !password || !role) {
-      return res.status(400).json({ success: false, message: 'email, password and role are required' });
+      return res.status(400).json({
+        message: "Email, mot de passe et rôle sont obligatoires",
+      });
     }
 
-    if (!Object.values(Role).includes(role)) {
-      return res.status(400).json({ success: false, message: `role must be one of: ${Object.values(Role).join(', ')}` });
-    }
+    // Appel du service d'inscription
+    const user = await authService.registerUser({
+      email,
+      password,
+      role,
+    });
 
-    const { user, token } = await authService.register(email, password, role);
-
-    // Auto-create the matching profile
-    if (role === Role.CANDIDATE) {
-      await CandidateProfile.create({ user: user._id });
-    } else if (role === Role.RECRUITER) {
-      await CompanyProfile.create({ user: user._id, companyName: email.split('@')[0] });
-    }
-
-    res.status(201).json({ success: true, data: { user, token } });
-  } catch (err) {
-    next(err);
+    return res.status(201).json({
+      message: "Compte créé avec succès",
+      user: {
+        id: user._id,
+        email: user.email,
+        role: user.role,
+      },
+    });
+  } catch (error) {
+    return res.status(400).json({
+      message: error.message,
+    });
   }
 };
 
-/**
- * POST /api/auth/login
- * Body: { email, password }
- */
-const login = async (req, res, next) => {
+
+// Vérification de l'adresse email
+const verifyEmail = async (req, res) => {
+  try {
+    const { email, code } = req.body;
+
+    // Vérification des données obligatoires
+    if (!email || !code) {
+      return res.status(400).json({
+        message: "Email et code sont obligatoires",
+      });
+    }
+
+    // Appel du service de vérification
+    const user = await authService.verifyEmail({
+      email,
+      code,
+    });
+
+    return res.status(200).json({
+      message: "Compte vérifié avec succès",
+      user: {
+        id: user._id,
+        email: user.email,
+        role: user.role,
+        isEmailVerified: user.isEmailVerified,
+      },
+    });
+  } catch (error) {
+    return res.status(400).json({
+      message: error.message,
+    });
+  }
+};
+
+const login = async (req, res) => {
   try {
     const { email, password } = req.body;
 
+    // Vérification des données obligatoires
     if (!email || !password) {
-      return res.status(400).json({ success: false, message: 'email and password are required' });
+      return res.status(400).json({
+        message: "Email et mot de passe sont obligatoires",
+      });
     }
 
-    const { user, token } = await authService.login(email, password);
-    res.json({ success: true, data: { user, token } });
-  } catch (err) {
-    next(err);
+    // Appel du service de connexion
+    const result = await authService.loginUser({
+      email,
+      password,
+    });
+
+    return res.status(200).json({
+      message: "Connexion réussie",
+      user: {
+        id: result.user._id,
+        email: result.user.email,
+        role: result.user.role,
+        isEmailVerified: result.user.isEmailVerified,
+      },
+      accessToken: result.accessToken,
+      refreshToken: result.refreshToken,
+    });
+  } catch (error) {
+    return res.status(401).json({
+      message: error.message,
+    });
   }
 };
 
-/**
- * GET /api/auth/me
- * Protected — requires valid JWT.
- */
-const me = async (req, res, next) => {
+// ======================================================
+// REFRESH TOKEN
+// ======================================================
+
+const refreshToken = async (req, res) => {
   try {
-    const User = require('../models/User');
-    const user = await User.findById(req.user.id);
-    if (!user) return res.status(404).json({ success: false, message: 'User not found' });
-    res.json({ success: true, data: { user } });
-  } catch (err) {
-    next(err);
+    const { refreshToken } = req.body;
+
+    // Vérification du refresh token
+    if (!refreshToken) {
+      return res.status(400).json({
+        message: "Refresh token obligatoire",
+      });
+    }
+
+    // Générer un nouvel access token
+    const accessToken = await authService.refreshAccessToken(
+      refreshToken
+    );
+
+    return res.status(200).json({
+      message: "Access token renouvelé avec succès",
+      accessToken,
+    });
+  } catch (error) {
+    return res.status(401).json({
+      message: error.message,
+    });
   }
 };
 
-module.exports = { register, login, me };
+
+// ======================================================
+// LOGOUT
+// ======================================================
+
+const logout = async (req, res) => {
+  try {
+    // req.user est fourni par le middleware protect
+    await authService.logoutUser(req.user._id);
+
+    return res.status(200).json({
+      message: "Déconnexion réussie",
+    });
+  } catch (error) {
+    return res.status(400).json({
+      message: error.message,
+    });
+  }
+};
+
+// ======================================================
+// FORGOT PASSWORD
+// ======================================================
+
+const forgotPassword = async (req, res) => {
+  try {
+    const { email } = req.body;
+
+    // Vérification de l'email
+    if (!email) {
+      return res.status(400).json({
+        message: "Email obligatoire",
+      });
+    }
+
+    // Appel du service pour générer et envoyer le code
+    await authService.forgotPassword(email);
+
+    return res.status(200).json({
+      message: "Code de réinitialisation envoyé par email",
+    });
+  } catch (error) {
+    return res.status(400).json({
+      message: error.message,
+    });
+  }
+};
+
+// ======================================================
+// RESET PASSWORD
+// ======================================================
+
+const resetPassword = async (req, res) => {
+  try {
+    const { email, code, newPassword } = req.body;
+
+    // Vérification des données obligatoires
+    if (!email || !code || !newPassword) {
+      return res.status(400).json({
+        message: "Email, code et nouveau mot de passe sont obligatoires",
+      });
+    }
+
+    // Appel du service de réinitialisation
+    await authService.resetPassword({
+      email,
+      code,
+      newPassword,
+    });
+
+    return res.status(200).json({
+      message: "Mot de passe réinitialisé avec succès",
+    });
+  } catch (error) {
+    return res.status(400).json({
+      message: error.message,
+    });
+  }
+};
+
+// CHANGE PASSWORD
+const changePassword = async (req, res) => {
+  try {
+    const { currentPassword, newPassword } = req.body;
+
+    // Vérification des données obligatoires
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({
+        message: "L'ancien et le nouveau mot de passe sont obligatoires",
+      });
+    }
+
+    // Appel du service de changement de mot de passe
+    await authService.changePassword({
+      userId: req.user._id,
+      currentPassword,
+      newPassword,
+    });
+
+    return res.status(200).json({
+      message: "Mot de passe modifié avec succès",
+    });
+  } catch (error) {
+    return res.status(400).json({
+      message: error.message,
+    });
+  }
+};
+
+module.exports = {
+  register,
+  verifyEmail,
+  login,
+  refreshToken,
+  logout,
+  forgotPassword,
+  resetPassword,
+  changePassword
+};

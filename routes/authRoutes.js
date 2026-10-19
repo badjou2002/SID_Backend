@@ -1,19 +1,41 @@
-const express = require('express');
+const express = require("express");
+
+const {
+  register,
+  verifyEmail,
+  login,
+  refreshToken,
+  logout,
+  forgotPassword,
+  resetPassword,
+  changePassword
+} = require("../controllers/authController");
+const { protect
+ } = require("../middlewares/authMiddleware");
 const router = express.Router();
-const { register, login, me } = require('../controllers/authController');
-const { protect } = require('../middlewares/authMiddleware');
 
-/**
- * Auth Routes
- */
+// Création d'un nouveau compte
+router.post("/register", register);
 
-// POST /api/auth/register  — Create a new account
-router.post('/register', register);
+// Vérification de l'adresse email
+router.post("/verify-email", verifyEmail);
 
-// POST /api/auth/login     — Login and receive JWT
-router.post('/login', login);
+// Connexion
+router.post("/login", login);
 
-// GET  /api/auth/me        — Get current user (requires JWT)
-router.get('/me', protect, me);
+// Modifier le mot de passe
+router.post("/change-password", protect, changePassword);
+
+// Renouveler l'access token
+router.post("/refresh-token", refreshToken);
+
+// Déconnexion
+router.post("/logout", protect, logout);
+
+// Demander un code de réinitialisation
+router.post("/forgot-password", forgotPassword);
+
+// Réinitialiser le mot de passe
+router.post("/reset-password", resetPassword);
 
 module.exports = router;
