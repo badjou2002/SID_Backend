@@ -20,9 +20,9 @@ app.get('/api/health', (req, res) => {
 });
 
 app.use('/api/auth', authRoutes);
-app.use('/api/profiles', profileRoutes);
+app.use('/api/v1/profiles', profileRoutes);
 app.use('/api/jobs', jobRoutes);
-app.use('/api/applications', applicationRoutes);
+app.use('/api/v1/applications', applicationRoutes);
 app.use('/api/news', newsRoutes);
 
 app.use((req, res) => {
