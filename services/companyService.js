@@ -1,10 +1,5 @@
 const CompanyProfile = require('../models/CompanyProfile');
-
-const createError = (message, statusCode) => {
-  const error = new Error(message);
-  error.statusCode = statusCode;
-  return error;
-};
+const ApiError = require('../utils/ApiError');
 
 const getAllCompanies = async (query = {}) => {
   const filter = {};
@@ -37,7 +32,7 @@ const getCompanyById = async (companyId) => {
   const company = await CompanyProfile.findById(companyId);
 
   if (!company) {
-    throw createError('Company profile not found', 404);
+    throw ApiError.notFound('Company profile not found');
   }
 
   return company;
@@ -50,7 +45,7 @@ const updateCompany = async (companyId, userId, data) => {
   });
 
   if (!company) {
-    throw createError('Company profile not found', 404);
+    throw ApiError.notFound('Company profile not found');
   }
 
   ['companyName', 'description', 'address', 'phone', 'website', 'logo'].forEach((field) => {
@@ -71,7 +66,7 @@ const verifyCompany = async (companyId) => {
   const company = await CompanyProfile.findById(companyId);
 
   if (!company) {
-    throw createError('Company profile not found', 404);
+    throw ApiError.notFound('Company profile not found');
   }
 
   company.isVerified = !company.isVerified;

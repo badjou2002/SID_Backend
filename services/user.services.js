@@ -1,11 +1,15 @@
 const User = require('../models/User');
+const CandidateProfile = require('../models/CandidateProfile');
+const Application = require('../models/Application');
 const crypto = require('crypto');
 const { sendVerificationEmail } = require('./emailService');
 
+const PUBLIC_USER_FIELDS = '-passwordHash -refreshToken -emailVerificationCode -emailVerificationExpires -passwordResetCode -passwordResetExpires';
+
 // Récupérer tous les utilisateurs
 const getAllUsers = async () => {
-  const users = await User.find()
-    .select('-passwordHash -refreshToken')
+  const users = await User.find({ isDeleted: { $ne: true } })
+    .select(PUBLIC_USER_FIELDS)
     .sort({ createdAt: -1 });
 
   return users;
@@ -14,10 +18,13 @@ const getAllUsers = async () => {
 // Récupérer un utilisateur par son ID
 const getUserById = async (userId) => {
   const user = await User.findById(userId)
-    .select('-passwordHash -refreshToken');
+    .select(PUBLIC_USER_FIELDS);
 
   if (!user) {
     throw new Error('Utilisateur introuvable');
+  }
+  if (user.isDeleted) {
+    throw new Error('Ce compte a été supprimé');
   }
 
   return user;
@@ -30,6 +37,9 @@ const updateUser = async (userId, data) => {
 
   if (!user) {
     throw new Error('Utilisateur introuvable');
+  }
+  if (user.isDeleted) {
+    throw new Error('Ce compte a été supprimé');
   }
 
   // Modifier l'email
@@ -85,7 +95,45 @@ const deleteUser = async (userId) => {
     throw new Error('Utilisateur introuvable');
   }
 
-  await User.findByIdAndDelete(userId);
+  const deletedUserId = String(user._id);
+  user.email = `deleted-${deletedUserId}@deleted.invalid`;
+  user.passwordHash = crypto.randomBytes(32).toString('hex');
+  user.isActive = false;
+  user.isDeleted = true;
+  user.isEmailVerified = false;
+  user.emailVerificationCode = null;
+  user.emailVerificationExpires = null;
+  user.passwordResetCode = null;
+  user.passwordResetExpires = null;
+  user.refreshToken = null;
+  await user.save();
+
+  const candidateProfile = await CandidateProfile.findOne({ user: user._id });
+  if (candidateProfile) {
+    await Application.updateMany(
+      { candidate: candidateProfile._id },
+      {
+        $set: {
+          customCvUrl: null,
+          motivationLetter: '',
+          matchScore: null,
+          aiJustification: ''
+        }
+      }
+    );
+
+    candidateProfile.fullName = '';
+    candidateProfile.phone = '';
+    candidateProfile.city = '';
+    candidateProfile.rawCvUrl = null;
+    candidateProfile.parsedSkills = [];
+    candidateProfile.parsedExperiences = [];
+    candidateProfile.parsedEducation = [];
+    candidateProfile.cvEmbedding = [];
+    candidateProfile.completenessScore = 0;
+    candidateProfile.isNewCandidate = false;
+    await candidateProfile.save();
+  }
 
   return true;
 };
@@ -96,6 +144,9 @@ const updateUserStatus = async (userId, isActive) => {
 
   if (!user) {
     throw new Error('Utilisateur introuvable');
+  }
+  if (user.isDeleted) {
+    throw new Error('Ce compte a été supprimé');
   }
 
   user.isActive = isActive;

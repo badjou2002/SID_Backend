@@ -2,6 +2,7 @@ const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
 
 const User = require('../models/User');
+const CandidateProfile = require('../models/CandidateProfile');
 const { Role } = require('../enums');
 
 const {
@@ -63,6 +64,15 @@ const registerUser = async ({ email, password, role }) => {
     emailVerificationExpires: verificationExpires
   });
 
+  if (role === Role.CANDIDATE) {
+    try {
+      await CandidateProfile.create({ user: user._id });
+    } catch (error) {
+      await User.findByIdAndDelete(user._id);
+      throw error;
+    }
+  }
+
   // Envoyer le code par email
   await sendVerificationEmail(
     user.email,
@@ -70,6 +80,27 @@ const registerUser = async ({ email, password, role }) => {
   );
 
   return user;
+};
+
+const resendVerificationCode = async (email) => {
+  const normalizedEmail = email.trim().toLowerCase();
+  const user = await User.findOne({
+    email: normalizedEmail,
+    isEmailVerified: false,
+    isActive: true
+  });
+
+  if (!user) {
+    return true;
+  }
+
+  const verificationCode = generateCode();
+  user.emailVerificationCode = verificationCode;
+  user.emailVerificationExpires = new Date(Date.now() + 10 * 60 * 1000);
+  await user.save();
+
+  await sendVerificationEmail(user.email, verificationCode);
+  return true;
 };
 
 
@@ -361,6 +392,7 @@ const changePassword = async ({ userId, currentPassword, newPassword }) => {
 
 module.exports = {
   registerUser,
+  resendVerificationCode,
   verifyEmail,
   loginUser,
   refreshAccessToken,

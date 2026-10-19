@@ -59,6 +59,10 @@ const userSchema = new mongoose.Schema(
     isActive: {
       type: Boolean,
       default: true
+    },
+    isDeleted: {
+      type: Boolean,
+      default: false
     }
   },
   
@@ -67,6 +71,12 @@ const userSchema = new mongoose.Schema(
     toJSON: {
       transform: (doc, ret) => {
         delete ret.passwordHash;
+        delete ret.refreshToken;
+        delete ret.emailVerificationCode;
+        delete ret.emailVerificationExpires;
+        delete ret.passwordResetCode;
+        delete ret.passwordResetExpires;
+        delete ret.isDeleted;
         return ret;
       }
     }

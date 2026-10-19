@@ -1,34 +1,17 @@
 const CompanyNews = require('../models/CompanyNews');
-const CompanyProfile = require('../models/CompanyProfile');
-
-const createError = (message, statusCode) => {
-  const error = new Error(message);
-  error.statusCode = statusCode;
-  return error;
-};
-
-const findCompanyProfile = async (userId) => {
-  const company = await CompanyProfile.findOne({ user: userId });
-
-  if (!company) {
-    throw createError('Company profile not found', 404);
-  }
-
-  return company;
-};
+const ApiError = require('../utils/ApiError');
+const { findCompanyProfile, populateCompany } = require('./companyHelpers');
 
 const findOwnedNews = async (newsId, userId) => {
   const company = await findCompanyProfile(userId);
   const news = await CompanyNews.findOne({ _id: newsId, company: company._id });
 
   if (!news) {
-    throw createError('News article not found', 404);
+    throw ApiError.notFound('News article not found');
   }
 
   return news;
 };
-
-const populateCompany = (news) => news.populate('company', 'companyName industry logo');
 
 const getAllNews = async (query = {}) => {
   const filter = { isPublished: true };
@@ -52,7 +35,7 @@ const getNewsById = async (newsId) => {
   const news = await CompanyNews.findOne({ _id: newsId, isPublished: true });
 
   if (!news) {
-    throw createError('Published news article not found', 404);
+    throw ApiError.notFound('Published news article not found');
   }
 
   return populateCompany(news);

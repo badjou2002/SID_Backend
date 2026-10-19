@@ -1,4 +1,5 @@
 const authService = require("../services/auth.service");
+const logger = require("../utils/logger");
 
 const register = async (req, res) => {
   try {
@@ -64,6 +65,29 @@ const verifyEmail = async (req, res) => {
   } catch (error) {
     return res.status(400).json({
       message: error.message,
+    });
+  }
+};
+
+const resendVerificationCode = async (req, res) => {
+  try {
+    const { email } = req.body;
+    if (!email || typeof email !== 'string') {
+      return res.status(400).json({
+        message: 'Email obligatoire',
+      });
+    }
+
+    await authService.resendVerificationCode(email);
+    return res.status(200).json({
+      message: 'Si le compte existe et n’est pas vérifié, un nouveau code sera envoyé',
+    });
+  } catch (error) {
+    logger.error('Verification email resend failed', {
+      errorMessage: error.message
+    });
+    return res.status(500).json({
+      message: 'Impossible d’envoyer le code de vérification',
     });
   }
 };
@@ -246,6 +270,7 @@ const changePassword = async (req, res) => {
 module.exports = {
   register,
   verifyEmail,
+  resendVerificationCode,
   login,
   refreshToken,
   logout,
