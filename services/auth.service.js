@@ -250,7 +250,7 @@ const forgotPassword = async (email) => {
   const user = await User.findOne({ email });
 
   if (!user) {
-    throw new Error('Utilisateur introuvable');
+    return true;
   }
 
   // Générer un code de reset

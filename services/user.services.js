@@ -1,5 +1,6 @@
 const User = require('../models/User');
-const bcrypt = require('bcryptjs');
+const crypto = require('crypto');
+const { sendVerificationEmail } = require('./emailService');
 
 // Récupérer tous les utilisateurs
 const getAllUsers = async () => {
@@ -25,6 +26,7 @@ const getUserById = async (userId) => {
 // Modifier les informations d'un utilisateur
 const updateUser = async (userId, data) => {
   const user = await User.findById(userId);
+  let verificationCodeToSend = null;
 
   if (!user) {
     throw new Error('Utilisateur introuvable');
@@ -32,8 +34,9 @@ const updateUser = async (userId, data) => {
 
   // Modifier l'email
   if (data.email) {
+    const normalizedEmail = data.email.trim().toLowerCase();
     const existingUser = await User.findOne({
-      email: data.email.toLowerCase(),
+      email: normalizedEmail,
       _id: { $ne: userId }
     });
 
@@ -41,7 +44,17 @@ const updateUser = async (userId, data) => {
       throw new Error('Cet email est déjà utilisé');
     }
 
-    user.email = data.email.toLowerCase();
+    if (user.email !== normalizedEmail) {
+      verificationCodeToSend = crypto.randomInt(100000, 1000000).toString();
+
+      user.email = normalizedEmail;
+      user.isEmailVerified = false;
+      user.emailVerificationCode = verificationCodeToSend;
+      user.emailVerificationExpires = new Date(Date.now() + 10 * 60 * 1000);
+      user.passwordResetCode = null;
+      user.passwordResetExpires = null;
+      user.refreshToken = null;
+    }
   }
 
   // Modifier le rôle
@@ -56,6 +69,10 @@ const updateUser = async (userId, data) => {
   }
 
   await user.save();
+
+  if (verificationCodeToSend) {
+    await sendVerificationEmail(user.email, verificationCodeToSend);
+  }
 
   return user;
 };

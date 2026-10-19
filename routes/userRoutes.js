@@ -6,7 +6,9 @@ const {
   updateUser,
   deleteUser,
   updateUserStatus,
-  
+  getMyAccount,
+  updateMyAccount,
+  deleteMyAccount
 } = require('../controllers/userController');
 
 const { protect, authorizeRoles } = require('../middlewares/authMiddleware');

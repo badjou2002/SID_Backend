@@ -1,4 +1,5 @@
 const nodemailer = require('nodemailer');
+const logger = require('../utils/logger');
 
 
 // Configuration du service d'envoi des emails
@@ -12,11 +13,22 @@ const transporter = nodemailer.createTransport({
     pass: process.env.EMAIL_PASSWORD
   }
 });
-transporter.verify((error, success) => {
+transporter.verify((error) => {
   if (error) {
-    console.log("❌ Erreur SMTP :", error.message);
+    const cause = error.cause;
+
+    logger.error('SMTP connection verification failed', {
+      errorMessage: error.message || 'No error message provided by SMTP transport',
+      errorCode: error.code || null,
+      command: error.command || null,
+      responseCode: error.responseCode || null,
+      causeCode: cause && cause.code ? cause.code : null,
+      causeMessage: cause && cause.message ? cause.message : null,
+      errno: error.errno || null,
+      syscall: error.syscall || null
+    });
   } else {
-    console.log("✅ Connexion SMTP réussie");
+    logger.info('SMTP connection verified');
   }
 });
 

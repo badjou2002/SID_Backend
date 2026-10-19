@@ -45,6 +45,11 @@ const companyProfileSchema = new mongoose.Schema(
     logo: {
       type: String,
       default: null
+    },
+
+    isVerified: {
+      type: Boolean,
+      default: false
     }
   },
   {
