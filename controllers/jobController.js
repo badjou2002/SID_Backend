@@ -4,6 +4,7 @@
  */
 
 const jobService = require('../services/jobService');
+const { enqueueMatchingSync } = require('../services/matchingQueue');
 
 /**
  * GET /api/jobs
@@ -12,6 +13,19 @@ const jobService = require('../services/jobService');
 const getAllJobs = async (req, res, next) => {
   try {
     const jobs = await jobService.getAllJobs(req.query);
+    res.json({ success: true, count: jobs.length, data: jobs });
+  } catch (err) {
+    next(err);
+  }
+};
+
+/**
+ * GET /api/jobs/mine
+ * Protected — RECRUITER only; includes closed offers.
+ */
+const getMyJobs = async (req, res, next) => {
+  try {
+    const jobs = await jobService.getMyJobs(req.user.id);
     res.json({ success: true, count: jobs.length, data: jobs });
   } catch (err) {
     next(err);
@@ -39,7 +53,8 @@ const getJobById = async (req, res, next) => {
 const createJob = async (req, res, next) => {
   try {
     const job = await jobService.createJob(req.user.id, req.body);
-    res.status(201).json({ success: true, data: job });
+    const indexing = await enqueueMatchingSync({ entity: 'offer', entityId: job._id });
+    res.status(201).json({ success: true, data: job, indexing });
   } catch (err) {
     next(err);
   }
@@ -52,7 +67,8 @@ const createJob = async (req, res, next) => {
 const updateJob = async (req, res, next) => {
   try {
     const job = await jobService.updateJob(req.params.id, req.user.id, req.body);
-    res.json({ success: true, data: job });
+    const indexing = await enqueueMatchingSync({ entity: 'offer', entityId: job._id });
+    res.json({ success: true, data: job, indexing });
   } catch (err) {
     next(err);
   }
@@ -64,8 +80,9 @@ const updateJob = async (req, res, next) => {
  */
 const deleteJob = async (req, res, next) => {
   try {
-    await jobService.deleteJob(req.params.id, req.user.id);
-    res.json({ success: true, message: 'Job offer deleted' });
+    const job = await jobService.deleteJob(req.params.id, req.user.id);
+    const indexing = await enqueueMatchingSync({ entity: 'offer', entityId: job._id });
+    res.json({ success: true, message: 'Job offer deleted', indexing });
   } catch (err) {
     next(err);
   }
@@ -78,10 +95,19 @@ const deleteJob = async (req, res, next) => {
 const closeJob = async (req, res, next) => {
   try {
     const job = await jobService.closeJob(req.params.id, req.user.id);
-    res.json({ success: true, data: job });
+    const indexing = await enqueueMatchingSync({ entity: 'offer', entityId: job._id });
+    res.json({ success: true, data: job, indexing });
   } catch (err) {
     next(err);
   }
 };
 
-module.exports = { getAllJobs, getJobById, createJob, updateJob, deleteJob, closeJob };
+module.exports = {
+  getAllJobs,
+  getMyJobs,
+  getJobById,
+  createJob,
+  updateJob,
+  deleteJob,
+  closeJob
+};

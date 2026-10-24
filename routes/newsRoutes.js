@@ -27,7 +27,7 @@ router.post('/', protect, authorize('RECRUITER'), createNews);
 router.put('/:id', protect, authorize('RECRUITER'), updateNews);
 
 // DELETE /api/news/:id   — RECRUITER (owner): delete
-router.delete('/:id', protect, authorize('RECRUITER'), deleteNews);
+router.delete('/:id', protect, authorize('RECRUITER', 'ADMIN'), deleteNews);
 
 // PATCH /api/news/:id/publish — RECRUITER (owner): toggle publish
 router.patch('/:id/publish', protect, authorize('RECRUITER'), togglePublish);

@@ -19,4 +19,6 @@ const conversationSchema = new mongoose.Schema(
   }
 );
 
+conversationSchema.index({ type: 1, createdAt: -1 });
+
 module.exports = mongoose.model('Conversation', conversationSchema);

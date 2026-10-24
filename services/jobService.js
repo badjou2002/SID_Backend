@@ -37,6 +37,13 @@ const getAllJobs = async (query = {}) => {
     .sort({ createdAt: -1 });
 };
 
+const getMyJobs = async (userId) => {
+  const company = await findCompanyProfile(userId);
+  return JobOffer.find({ company: company._id })
+    .populate('company', 'companyName industry logo')
+    .sort({ createdAt: -1 });
+};
+
 const getJobById = async (jobId) => {
   const job = await JobOffer.findById(jobId);
 
@@ -76,6 +83,7 @@ const updateJob = async (jobId, userId, data) => {
 const deleteJob = async (jobId, userId) => {
   const job = await findOwnedJob(jobId, userId);
   await job.deleteOne();
+  return job;
 };
 
 const closeJob = async (jobId, userId) => {
@@ -88,6 +96,7 @@ const closeJob = async (jobId, userId) => {
 
 module.exports = {
   getAllJobs,
+  getMyJobs,
   getJobById,
   createJob,
   updateJob,

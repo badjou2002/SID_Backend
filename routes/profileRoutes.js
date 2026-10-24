@@ -16,6 +16,7 @@ const router = express.Router();
 const validate = require('../middlewares/validate');
 const {
   getMyProfile,
+  createMyProfile,
   updateMyProfile,
   getAllProfiles
 } = require('../controllers/profileController');
@@ -83,6 +84,15 @@ const updateValidators = [
   body('parsedExperiences').optional().isArray({ max: 50 }),
   body('parsedEducation').optional().isArray({ max: 50 })
 ];
+const createValidators = [
+  body('fullName').isString().trim().isLength({ min: 1, max: 120 }),
+  body('phone').optional().isString().trim().isLength({ max: 40 }),
+  body('city').optional().isString().trim().isLength({ max: 80 }),
+  body('parsedSkills').optional().isArray({ max: 100 }),
+  body('parsedSkills.*').isString().trim().isLength({ min: 1, max: 60 }),
+  body('parsedExperiences').optional().isArray({ max: 50 }),
+  body('parsedEducation').optional().isArray({ max: 50 })
+];
 
 // GET /api/v1/profiles — tous les profils candidats (RECRUITER / ADMIN)
 router.get(
@@ -101,6 +111,16 @@ router.get(
   protect,
   authorizeRoles(Role.CANDIDATE),
   getMyProfile
+);
+
+// POST /api/v1/profiles/candidate/me
+router.post(
+  '/candidate/me',
+  protect,
+  authorizeRoles(Role.CANDIDATE),
+  createValidators,
+  validate,
+  createMyProfile
 );
 
 // PUT /api/v1/profiles/candidate/me

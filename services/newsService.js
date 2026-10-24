@@ -67,8 +67,15 @@ const updateNews = async (newsId, userId, data) => {
   return populateCompany(news);
 };
 
-const deleteNews = async (newsId, userId) => {
-  const news = await findOwnedNews(newsId, userId);
+const deleteNews = async (newsId, userId, isAdmin = false) => {
+  const news = isAdmin
+    ? await CompanyNews.findById(newsId)
+    : await findOwnedNews(newsId, userId);
+
+  if (!news) {
+    throw ApiError.notFound('News article not found');
+  }
+
   await news.deleteOne();
 };
 

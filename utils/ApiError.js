@@ -24,6 +24,10 @@ class ApiError extends Error {
   static conflict(message = 'Conflict') {
     return new ApiError(409, message);
   }
+
+  static unavailable(message = 'Service temporarily unavailable') {
+    return new ApiError(503, message);
+  }
 }
 
 module.exports = ApiError;

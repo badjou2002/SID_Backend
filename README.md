@@ -9,6 +9,65 @@ npm install
 npm run dev
 ```
 
+## Administration et salons de l'emploi
+
+Les routes du tableau de bord nécessitent un jeton Bearer valide associé à un
+utilisateur ayant le rôle `ADMIN` :
+
+- `GET /api/admin/news` liste les actualités publiées et les brouillons.
+- `GET /api/admin/stats` retourne les nombres d'offres, candidatures, actualités
+  et salons calculés à partir de MongoDB.
+- `GET /api/admin/ai-insights?days=7|30|90` analyse les messages de l'assistant
+  sur la période demandée (7 jours par défaut).
+- `DELETE /api/news/:id` autorise également l'administrateur à supprimer toute
+  actualité, même si elle appartient à une autre entreprise.
+
+`GET /api/job-fairs` liste les salons stockés dans la collection `jobfairs`.
+Chaque document contient un nom, un lieu, un organisateur, des dates de début et
+de fin, ainsi que les nombres d'entreprises et de participants. Les recruteurs
+peuvent utiliser `GET /api/jobs/mine` pour afficher toutes leurs offres, y
+compris celles qui sont fermées.
+
+## Intégration SID_Agent et indexation
+
+Le backend relaie la façade et les workflows de SID_Agent sous `/api/ai` afin de
+ne pas remplacer les routes métier déjà présentes :
+
+- `/api/ai/agent/*` relaie les fonctions chat, CV, recherche, scoring et évaluation.
+- `/api/ai/v1/*` relaie les imports CV, profils IA, dossiers, conversations,
+  connaissances et états opérationnels.
+- `/api/ai/health` et `/api/ai/health/ready` relaie les contrôles de santé.
+
+Les routes IA contrôlent le jeton et les rôles dans SID_Backend, puis transmettent
+l'identifiant MongoDB vérifié (`X-Platform-User-Id`) avec la clé de service.
+SID_Agent vérifie cette clé avant d'accepter l'identifiant et recharge le rôle et
+le statut du compte depuis la base partagée; aucun JWT n'est validé dans SID_Agent.
+Les opérations réservées au service sont limitées à `ADMIN`.
+Configurer `SID_AGENT_URL` (URL de base du service, sans suffixe `/api`),
+`SID_SERVICE_API_KEY` (même valeur que SID_Agent). Les deux services doivent lire
+la même base MongoDB pour que les offres et les profils restent cohérents.
+
+Les créations et modifications de profils candidats, offres et entreprises
+placent une tâche BullMQ dans Redis. L'indexeur de SID_Agent recalcule ensuite
+les index vectoriels candidats/offres dans Qdrant. Aucun vecteur n'est accepté
+depuis le navigateur et les salons de l'emploi ne sont pas vectorisés.
+
+Pour le développement local, démarrer Redis et les deux services :
+
+```powershell
+docker compose -f compose.redis.yml up -d --wait
+npm run dev
+npm run worker:matching
+```
+
+Configurer également `REDIS_URL=redis://127.0.0.1:6379`, `SID_AGENT_URL`,
+`SID_SERVICE_API_KEY` et `SID_AGENT_SYNC_TIMEOUT_MS` dans l'environnement du
+backend. Exécuter le worker dans un processus supervisé distinct. La réponse
+des API de création/modification indique `indexing.status` (`queued` ou
+`disabled`) ; un échec de mise en file retourne une erreur explicite et indique
+que l'enregistrement métier a déjà été sauvegardé. Pour vérifier l'index,
+utiliser `GET /api/ai/v1/matching/status` en tant qu'administrateur.
+
 Le serveur écoute par défaut sur `http://localhost:5000` (ou sur le port défini dans la configuration locale). La configuration locale doit contenir les paramètres MongoDB, JWT et SMTP nécessaires. Ne partagez et ne commitez jamais les secrets.
 
 ## Utiliser l'API

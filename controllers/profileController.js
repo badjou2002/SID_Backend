@@ -3,7 +3,7 @@ const CompanyProfile = require('../models/CompanyProfile');
 // ==================== RECRUITER ====================
 
 // Créer le profil de l'entreprise
-const createCompanyProfile = async (req, res) => {
+const createCompanyProfile = async (req, res, next) => {
   try {
     // Vérifier si le Recruiter possède déjà un profil
     const existingProfile = await CompanyProfile.findOne({
@@ -27,17 +27,16 @@ const createCompanyProfile = async (req, res) => {
       website: req.body.website,
       logo: req.body.logo
     });
+    const indexing = await enqueueMatchingSync({ entity: 'company', entityId: profile._id });
 
     return res.status(201).json({
       success: true,
       message: 'Profil entreprise créé avec succès',
-      profile
+      profile,
+      indexing
     });
   } catch (error) {
-    return res.status(400).json({
-      success: false,
-      message: error.message
-    });
+    return next(error);
   }
 };
 
@@ -68,7 +67,7 @@ const getMyCompanyProfile = async (req, res) => {
 };
 
 // Modifier son profil
-const updateCompanyProfile = async (req, res) => {
+const updateCompanyProfile = async (req, res, next) => {
   try {
     const profile = await CompanyProfile.findOne({
       user: req.user._id
@@ -98,22 +97,21 @@ const updateCompanyProfile = async (req, res) => {
     });
 
     await profile.save();
+    const indexing = await enqueueMatchingSync({ entity: 'company', entityId: profile._id });
 
     return res.status(200).json({
       success: true,
       message: 'Profil entreprise modifié avec succès',
-      profile
+      profile,
+      indexing
     });
   } catch (error) {
-    return res.status(400).json({
-      success: false,
-      message: error.message
-    });
+    return next(error);
   }
 };
 
 // Supprimer son profil
-const deleteCompanyProfile = async (req, res) => {
+const deleteCompanyProfile = async (req, res, next) => {
   try {
     const profile = await CompanyProfile.findOne({
       user: req.user._id
@@ -127,22 +125,24 @@ const deleteCompanyProfile = async (req, res) => {
     }
 
     await CompanyProfile.findByIdAndDelete(profile._id);
+    const indexing = await enqueueMatchingSync({ entity: 'company', entityId: profile._id });
 
     return res.status(200).json({
       success: true,
-      message: 'Profil entreprise supprimé avec succès'
+      message: 'Profil entreprise supprimé avec succès',
+      indexing
     });
   } catch (error) {
-    return res.status(400).json({
-      success: false,
-      message: error.message
-    });}};
+    return next(error);
+  }
+};
     
 const CandidateProfile = require('../models/CandidateProfile');
 const User = require('../models/User');
 const ApiError = require('../utils/ApiError');
 const { ok } = require('../utils/response');
 const { Role } = require('../enums');
+const { enqueueMatchingSync } = require('../services/matchingQueue');
 
 const PROFILE_FIELDS = [
   'fullName',
@@ -178,7 +178,7 @@ const requireCandidateProfile = async (req) => {
   if (!req.user || req.user.role !== Role.CANDIDATE) {
     throw ApiError.forbidden('Candidate access only');
   }
-  const profile = await CandidateProfile.findOne({ user: req.user._id }).populate(
+  const profile = await CandidateProfile.findOne({ user: req.user._id }).select('-cvEmbedding').populate(
     'user',
     'email role createdAt'
   );
@@ -223,6 +223,36 @@ const getMyProfile = async (req, res, next) => {
   }
 };
 
+const createMyProfile = async (req, res, next) => {
+  try {
+    if (!req.user || req.user.role !== Role.CANDIDATE) {
+      throw ApiError.forbidden('Candidate access only');
+    }
+    const existing = await CandidateProfile.findOne({ user: req.user._id });
+    if (existing) {
+      throw ApiError.conflict('Candidate profile already exists');
+    }
+    const profile = await CandidateProfile.create({
+      user: req.user._id,
+      fullName: req.body.fullName,
+      phone: req.body.phone,
+      city: req.body.city,
+      parsedSkills: req.body.parsedSkills,
+      parsedExperiences: req.body.parsedExperiences,
+      parsedEducation: req.body.parsedEducation
+    });
+    profile.completenessScore = computeCompleteness(profile);
+    await profile.save();
+    const indexing = await enqueueMatchingSync({ entity: 'candidate', entityId: profile._id });
+    await profile.populate('user', 'email role createdAt');
+    const profileData = profile.toObject();
+    delete profileData.cvEmbedding;
+    return res.status(201).json({ success: true, profile: profileData, indexing });
+  } catch (err) {
+    return next(err);
+  }
+};
+
 const updateMyProfile = async (req, res, next) => {
   try {
     const profile = await requireCandidateProfile(req);
@@ -237,8 +267,11 @@ const updateMyProfile = async (req, res, next) => {
     Object.assign(profile, updates);
     profile.completenessScore = computeCompleteness(profile);
     await profile.save();
+    const indexing = await enqueueMatchingSync({ entity: 'candidate', entityId: profile._id });
 
-    return ok(res, profile);
+    const profileData = profile.toObject();
+    delete profileData.cvEmbedding;
+    return res.status(200).json({ success: true, data: profileData, indexing });
   } catch (err) {
     return next(err);
   }
@@ -250,6 +283,7 @@ module.exports = {
   updateCompanyProfile,
   deleteCompanyProfile,
   getMyProfile,
+  createMyProfile,
   updateMyProfile,
   getAllProfiles,
   computeCompleteness,

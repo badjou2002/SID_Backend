@@ -3,6 +3,14 @@ const CandidateProfile = require('../models/CandidateProfile');
 const Application = require('../models/Application');
 const crypto = require('crypto');
 const { sendVerificationEmail } = require('./emailService');
+const { enqueueMatchingSync } = require('./matchingQueue');
+
+const queueCandidateIndex = async (userId) => {
+  const profile = await CandidateProfile.findOne({ user: userId }).select('_id');
+  if (profile) {
+    await enqueueMatchingSync({ entity: 'candidate', entityId: profile._id });
+  }
+};
 
 const PUBLIC_USER_FIELDS = '-passwordHash -refreshToken -emailVerificationCode -emailVerificationExpires -passwordResetCode -passwordResetExpires';
 
@@ -80,6 +88,10 @@ const updateUser = async (userId, data) => {
 
   await user.save();
 
+  if (data.role) {
+    await queueCandidateIndex(user._id);
+  }
+
   if (verificationCodeToSend) {
     await sendVerificationEmail(user.email, verificationCodeToSend);
   }
@@ -152,6 +164,7 @@ const updateUserStatus = async (userId, isActive) => {
   user.isActive = isActive;
 
   await user.save();
+  await queueCandidateIndex(user._id);
 
   return user;
 };

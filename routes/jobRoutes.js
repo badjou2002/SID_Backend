@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const {
   getAllJobs,
+  getMyJobs,
   getJobById,
   createJob,
   updateJob,
@@ -9,14 +10,24 @@ const {
   closeJob
 } = require('../controllers/jobController');
 const { protect, authorize } = require('../middlewares/authMiddleware');
+const { query } = require('express-validator');
+const validate = require('../middlewares/validate');
+const { OfferType } = require('../enums');
 
 /**
  * Job Offer Routes
  */
 
 // GET  /api/jobs          — Public: list all OPEN offers
-router.get('/', getAllJobs);
+router.get(
+  '/',
+  query('type').optional().isIn(Object.values(OfferType)).withMessage('Invalid offer type'),
+  validate,
+  getAllJobs
+);
 
+// GET  /api/jobs/mine     — RECRUITER: list all own offers, including closed offers
+router.get('/mine', protect, authorize('RECRUITER'), getMyJobs);
 // GET  /api/jobs/:id      — Public: get single offer
 router.get('/:id', getJobById);
 

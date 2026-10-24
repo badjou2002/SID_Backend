@@ -4,6 +4,7 @@
  */
 
 const newsService = require('../services/newsService');
+const { Role } = require('../enums');
 
 /**
  * GET /api/news
@@ -64,7 +65,11 @@ const updateNews = async (req, res, next) => {
  */
 const deleteNews = async (req, res, next) => {
   try {
-    await newsService.deleteNews(req.params.id, req.user.id);
+    await newsService.deleteNews(
+      req.params.id,
+      req.user.id,
+      req.user.role === Role.ADMIN
+    );
     res.json({ success: true, message: 'News article deleted' });
   } catch (err) {
     next(err);
