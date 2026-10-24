@@ -1,61 +1,73 @@
-const { Queue } = require('bullmq');
-const IORedis = require('ioredis');
+const { Agenda } = require('agenda');
 const logger = require('../utils/logger');
 const ApiError = require('../utils/ApiError');
 
-const MATCHING_QUEUE = 'sid-agent-matching-sync';
-let queue;
-let queueConnection;
+const MATCHING_JOB = 'sid-agent-matching-sync';
+const MAX_ATTEMPTS = 5;
+let agenda;
+let agendaReady;
 let disabledWarningLogged = false;
 
 const matchingIntegrationConfigured = () => (
-  Boolean(process.env.REDIS_URL && process.env.SID_AGENT_URL && process.env.SID_SERVICE_API_KEY)
+  Boolean(process.env.MONGO_URI && process.env.SID_AGENT_URL && process.env.SID_SERVICE_API_KEY)
 );
 
 const matchingIntegrationPartiallyConfigured = () => (
-  Boolean(process.env.REDIS_URL || process.env.SID_AGENT_URL || process.env.SID_SERVICE_API_KEY)
+  Boolean(process.env.MONGO_URI || process.env.SID_AGENT_URL || process.env.SID_SERVICE_API_KEY)
 );
 
-const getMatchingQueue = () => {
-  if (queue) {
-    return queue;
-  }
-  if (!process.env.REDIS_URL) {
-    throw new Error('REDIS_URL is required for background matching updates');
+const getMatchingAgenda = async () => {
+  if (agenda) {
+    await agendaReady;
+    return agenda;
   }
 
-  queueConnection = new IORedis(process.env.REDIS_URL, { maxRetriesPerRequest: null });
-  queue = new Queue(MATCHING_QUEUE, {
-    connection: queueConnection,
-    defaultJobOptions: {
-      attempts: 5,
-      backoff: { type: 'exponential', delay: 1000 },
-      removeOnComplete: { count: 1000 },
-      removeOnFail: { count: 5000 }
-    }
+  if (!process.env.MONGO_URI) {
+    throw new Error('MONGO_URI is required for background matching updates');
+  }
+
+  agenda = new Agenda({
+    db: {
+      address: process.env.MONGO_URI,
+      collection: 'sidAgentAgendaJobs'
+    },
+    processEvery: '1 second',
+    defaultConcurrency: 1,
+    maxConcurrency: 1,
+    defaultLockLifetime: (Number(process.env.SID_AGENT_SYNC_TIMEOUT_MS) || 180000) + 30000
   });
-  return queue;
+  agenda.on('error', (error) => {
+    logger.error('Matching Agenda error', { errorMessage: error.message });
+  });
+  agendaReady = new Promise((resolve, reject) => {
+    agenda.once('ready', resolve);
+    agenda.once('error', reject);
+  });
+  await agendaReady;
+  return agenda;
 };
 
 const enqueueMatchingSync = async ({ entity, entityId }) => {
   if (!matchingIntegrationConfigured()) {
     if (matchingIntegrationPartiallyConfigured()) {
       throw ApiError.unavailable(
-        'Configure REDIS_URL, SID_AGENT_URL and SID_SERVICE_API_KEY together to enable matching updates'
+        'Configure MONGO_URI, SID_AGENT_URL and SID_SERVICE_API_KEY together to enable matching updates'
       );
     }
     if (!disabledWarningLogged) {
-      logger.warn('Matching index updates are disabled; configure REDIS_URL, SID_AGENT_URL and SID_SERVICE_API_KEY');
+      logger.warn('Matching index updates are disabled; configure MONGO_URI, SID_AGENT_URL and SID_SERVICE_API_KEY');
       disabledWarningLogged = true;
     }
     return { status: 'disabled' };
   }
   try {
-    const job = await getMatchingQueue().add('sync-platform-index', {
+    const scheduler = await getMatchingAgenda();
+    const job = await scheduler.now(MATCHING_JOB, {
       entity,
-      entityId: String(entityId)
+      entityId: String(entityId),
+      attemptsMade: 0
     });
-    return { status: 'queued', jobId: job.id };
+    return { status: 'queued', jobId: String(job.attrs._id) };
   } catch (error) {
     logger.error('Failed to enqueue matching index update', {
       entity,
@@ -68,22 +80,68 @@ const enqueueMatchingSync = async ({ entity, entityId }) => {
   }
 };
 
-const closeMatchingQueue = async () => {
-  if (queue) {
-    const activeQueue = queue;
-    const activeConnection = queueConnection;
-    queue = undefined;
-    queueConnection = undefined;
-    await activeQueue.close();
-    if (activeConnection && activeConnection.status !== 'end') {
-      await activeConnection.quit();
+const registerMatchingJob = async (processJob) => {
+  const scheduler = await getMatchingAgenda();
+  scheduler.define(
+    MATCHING_JOB,
+    {
+      concurrency: 1,
+      lockLifetime: (Number(process.env.SID_AGENT_SYNC_TIMEOUT_MS) || 180000) + 30000
+    },
+    async (job) => {
+      try {
+        return await processJob(job);
+      } catch (error) {
+        const attemptsMade = Number(job.attrs.data.attemptsMade) || 0;
+        if (attemptsMade + 1 >= MAX_ATTEMPTS) {
+          throw error;
+        }
+
+        const nextAttempt = attemptsMade + 1;
+        const retryDelayMs = 1000 * (2 ** attemptsMade);
+        job.attrs.data.attemptsMade = nextAttempt;
+        job.schedule(new Date(Date.now() + retryDelayMs));
+        logger.warn('Matching index job scheduled for retry', {
+          jobId: String(job.attrs._id),
+          attempt: nextAttempt + 1,
+          maxAttempts: MAX_ATTEMPTS,
+          retryDelayMs,
+          errorMessage: error.message
+        });
+        return { retrying: true, attempt: nextAttempt + 1 };
+      }
     }
+  );
+  return scheduler;
+};
+
+const startMatchingWorker = async (processJob) => {
+  const scheduler = await registerMatchingJob(processJob);
+  scheduler.on(`fail:${MATCHING_JOB}`, (error, job) => {
+    logger.error('Matching index job failed permanently', {
+      jobId: String(job.attrs._id),
+      attemptsMade: job.attrs.data.attemptsMade,
+      errorMessage: error.message
+    });
+  });
+  await scheduler.start();
+  return scheduler;
+};
+
+const closeMatchingQueue = async () => {
+  if (agenda) {
+    const activeAgenda = agenda;
+    agenda = undefined;
+    agendaReady = undefined;
+    await activeAgenda.stop();
+    await activeAgenda.close({ force: true });
   }
 };
 
 module.exports = {
-  MATCHING_QUEUE,
+  MATCHING_JOB,
   enqueueMatchingSync,
+  startMatchingWorker,
   closeMatchingQueue,
   matchingIntegrationConfigured
 };

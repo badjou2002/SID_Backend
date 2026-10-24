@@ -66,21 +66,26 @@ Configurer `SID_AGENT_URL` (URL de base du service, sans suffixe `/api`),
 la même base MongoDB pour que les offres et les profils restent cohérents.
 
 Les créations et modifications de profils candidats, offres et entreprises
-placent une tâche BullMQ dans Redis. L'indexeur de SID_Agent recalcule ensuite
-les index vectoriels candidats/offres dans Qdrant. Aucun vecteur n'est accepté
-depuis le navigateur et les salons de l'emploi ne sont pas vectorisés.
+placent une tâche Agenda dans la collection MongoDB `sidAgentAgendaJobs` de la
+base déjà configurée par `MONGO_URI`. Le worker appelle ensuite l'API de
+synchronisation de SID_Agent, qui recalcule les index vectoriels candidats/offres
+dans Qdrant. Aucun vecteur n'est accepté depuis le navigateur et les salons de
+l'emploi ne sont pas vectorisés (SID_Agent ne fournit pas d'API d'embedding pour
+les salons).
 
-Pour le développement local, démarrer Redis et les deux services :
+Pour le développement local, démarrer MongoDB, SID_Agent, le serveur backend et
+le worker Agenda :
 
 ```powershell
-docker compose -f compose.redis.yml up -d --wait
 npm run dev
 npm run worker:matching
 ```
 
-Configurer également `REDIS_URL=redis://127.0.0.1:6379`, `SID_AGENT_URL`,
+Configurer `MONGO_URI` (commun à l'application et au worker), `SID_AGENT_URL`,
 `SID_SERVICE_API_KEY` et `SID_AGENT_SYNC_TIMEOUT_MS` dans l'environnement du
-backend. Exécuter le worker dans un processus supervisé distinct. La réponse
+backend. Agenda utilise cette même base MongoDB, dans sa collection dédiée
+`sidAgentAgendaJobs`; aucun Redis séparé n'est requis. Exécuter le worker dans un
+processus supervisé distinct. La réponse
 des API de création/modification indique `indexing.status` (`queued` ou
 `disabled`) ; un échec de mise en file retourne une erreur explicite et indique
 que l'enregistrement métier a déjà été sauvegardé. Pour vérifier l'index,
@@ -140,7 +145,7 @@ pas directement `X-Service-Key` ou `X-Platform-User-Id` depuis un client.
 Les corps attendus, paramètres, réponses détaillées et codes d'erreur sont
 documentés dans la [référence API SID_Agent](../ai_api/SID_Agent/docs/api-reference.md).
 La synchronisation immédiate des index est une route interne du service:
-`POST /api/v1/matching/sync`; elle est déclenchée par le worker BullMQ et non par
+`POST /api/v1/matching/sync`; elle est déclenchée par le worker Agenda et non par
 le proxy public.
 
 #### Exemple : créer une conversation puis envoyer un message

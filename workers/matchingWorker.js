@@ -1,36 +1,37 @@
 require('dotenv').config();
-const { Worker } = require('bullmq');
-const IORedis = require('ioredis');
-const { MATCHING_QUEUE } = require('../services/matchingQueue');
+const connectDB = require('../config/db');
+const { startMatchingWorker, closeMatchingQueue } = require('../services/matchingQueue');
 const { processMatchingSyncJob } = require('../services/matchingWorkerProcessor');
 const logger = require('../utils/logger');
 
-if (!process.env.REDIS_URL) {
-  throw new Error('REDIS_URL is required to run the matching worker');
-}
-
-const connection = new IORedis(process.env.REDIS_URL, { maxRetriesPerRequest: null });
-const worker = new Worker(
-  MATCHING_QUEUE,
-  processMatchingSyncJob,
-  { connection, concurrency: 1 }
-);
-
-worker.on('failed', (job, error) => {
-  logger.error('Matching index job failed', {
-    jobId: job && job.id,
-    errorMessage: error.message
-  });
-});
-
-worker.on('error', (error) => {
-  logger.error('Matching worker error', { errorMessage: error.message });
-});
-
-const shutdown = async () => {
-  await worker.close();
-  await connection.quit();
+const start = async () => {
+  if (!process.env.MONGO_URI) {
+    throw new Error('MONGO_URI is required to run the matching worker');
+  }
+  await connectDB();
+  await startMatchingWorker(processMatchingSyncJob);
+  logger.info('Matching Agenda worker started');
 };
 
-process.once('SIGINT', () => shutdown().then(() => process.exit(0)));
-process.once('SIGTERM', () => shutdown().then(() => process.exit(0)));
+const shutdown = async () => {
+  await closeMatchingQueue();
+  await require('mongoose').disconnect();
+};
+
+for (const signal of ['SIGINT', 'SIGTERM']) {
+  process.once(signal, () => {
+    shutdown()
+      .then(() => process.exit(0))
+      .catch((error) => {
+        logger.error('Failed to stop matching worker cleanly', {
+          errorMessage: error.message
+        });
+        process.exit(1);
+      });
+  });
+}
+
+start().catch((error) => {
+  logger.error('Failed to start matching Agenda worker', { errorMessage: error.message });
+  process.exitCode = 1;
+});

@@ -12,8 +12,8 @@ const processMatchingSyncJob = async (job) => {
     throw new Error(`SID Agent matching sync returned ${response.status}`);
   }
   logger.info('Matching index synchronized', {
-    jobId: job.id,
-    entity: job.data.entity,
+    jobId: String(job.attrs._id),
+    entity: job.attrs.data.entity,
     result: payload
   });
   return payload;
