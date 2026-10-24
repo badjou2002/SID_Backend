@@ -1,8 +1,10 @@
 const express = require("express");
+const { body } = require("express-validator");
 
 const {
   register,
   verifyEmail,
+  resendVerificationCode,
   login,
   refreshToken,
   logout,
@@ -12,6 +14,7 @@ const {
 } = require("../controllers/authController");
 const { protect
  } = require("../middlewares/authMiddleware");
+const validate = require("../middlewares/validate");
 const router = express.Router();
 
 // Création d'un nouveau compte
@@ -19,6 +22,14 @@ router.post("/register", register);
 
 // Vérification de l'adresse email
 router.post("/verify-email", verifyEmail);
+
+// Demander un nouveau code de vérification
+router.post(
+  "/resend-verification-code",
+  body('email').isEmail().withMessage('Email invalide'),
+  validate,
+  resendVerificationCode
+);
 
 // Connexion
 router.post("/login", login);

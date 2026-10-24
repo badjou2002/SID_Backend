@@ -1,15 +1,6 @@
-/**
- * Application Controller
- * Handles applying, listing, status updates, and validation.
- */
-
 const applicationService = require('../services/applicationService');
+const { Role } = require('../enums');
 
-/**
- * POST /api/applications
- * Protected — CANDIDATE only.
- * Body: { jobOfferId, customCvUrl, motivationLetter }
- */
 const applyToJob = async (req, res, next) => {
   try {
     const application = await applicationService.applyToJob(req.user.id, req.body);
@@ -19,10 +10,6 @@ const applyToJob = async (req, res, next) => {
   }
 };
 
-/**
- * GET /api/applications/candidate/:candidateId
- * Protected — CANDIDATE (must be the owner of the profile).
- */
 const getCandidateApplications = async (req, res, next) => {
   try {
     const applications = await applicationService.getCandidateApplications(
@@ -35,10 +22,18 @@ const getCandidateApplications = async (req, res, next) => {
   }
 };
 
-/**
- * GET /api/applications/job/:jobOfferId
- * Protected — RECRUITER (must own the job offer).
- */
+const getMyApplications = async (req, res, next) => {
+  try {
+    const applications = await applicationService.getMyApplications(
+      req.user.id,
+      req.query.status
+    );
+    res.json({ success: true, count: applications.length, data: applications });
+  } catch (err) {
+    next(err);
+  }
+};
+
 const getJobApplications = async (req, res, next) => {
   try {
     const applications = await applicationService.getJobApplications(
@@ -51,17 +46,13 @@ const getJobApplications = async (req, res, next) => {
   }
 };
 
-/**
- * PATCH /api/applications/:id/status
- * Protected — RECRUITER (owner of the job).
- * Body: { status }
- */
-const updateStatus = async (req, res, next) => {
+const updateApplicationStatus = async (req, res, next) => {
   try {
     const application = await applicationService.updateApplicationStatus(
       req.params.id,
       req.user.id,
-      req.body.status
+      req.body.status,
+      req.user.role === Role.ADMIN
     );
     res.json({ success: true, data: application });
   } catch (err) {
@@ -69,13 +60,12 @@ const updateStatus = async (req, res, next) => {
   }
 };
 
-/**
- * PATCH /api/applications/:id/validate
- * Protected — CANDIDATE (owner of the application).
- */
 const validateApplication = async (req, res, next) => {
   try {
-    const application = await applicationService.validateApplication(req.params.id, req.user.id);
+    const application = await applicationService.validateApplication(
+      req.params.id,
+      req.user.id
+    );
     res.json({ success: true, data: application });
   } catch (err) {
     next(err);
@@ -85,7 +75,8 @@ const validateApplication = async (req, res, next) => {
 module.exports = {
   applyToJob,
   getCandidateApplications,
+  getMyApplications,
   getJobApplications,
-  updateStatus,
+  updateApplicationStatus,
   validateApplication
 };

@@ -4,6 +4,7 @@
  */
 
 const companyService = require('../services/companyService');
+const { enqueueMatchingSync } = require('../services/matchingQueue');
 
 /**
  * GET /api/companies
@@ -39,7 +40,8 @@ const getCompanyById = async (req, res, next) => {
 const updateCompany = async (req, res, next) => {
   try {
     const company = await companyService.updateCompany(req.params.id, req.user.id, req.body);
-    res.json({ success: true, data: company });
+    const indexing = await enqueueMatchingSync({ entity: 'company', entityId: company._id });
+    res.json({ success: true, data: company, indexing });
   } catch (err) {
     next(err);
   }
@@ -52,7 +54,8 @@ const updateCompany = async (req, res, next) => {
 const verifyCompany = async (req, res, next) => {
   try {
     const company = await companyService.verifyCompany(req.params.id);
-    res.json({ success: true, data: company });
+    const indexing = await enqueueMatchingSync({ entity: 'company', entityId: company._id });
+    res.json({ success: true, data: company, indexing });
   } catch (err) {
     next(err);
   }

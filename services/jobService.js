@@ -1,35 +1,18 @@
-const CompanyProfile = require('../models/CompanyProfile');
 const JobOffer = require('../models/JobOffer');
+const ApiError = require('../utils/ApiError');
+const { findCompanyProfile, populateCompany } = require('./companyHelpers');
 const { OfferStatus } = require('../enums');
-
-const createError = (message, statusCode) => {
-  const error = new Error(message);
-  error.statusCode = statusCode;
-  return error;
-};
-
-const findCompanyProfile = async (userId) => {
-  const company = await CompanyProfile.findOne({ user: userId });
-
-  if (!company) {
-    throw createError('Company profile not found', 404);
-  }
-
-  return company;
-};
 
 const findOwnedJob = async (jobId, userId) => {
   const company = await findCompanyProfile(userId);
   const job = await JobOffer.findOne({ _id: jobId, company: company._id });
 
   if (!job) {
-    throw createError('Job offer not found', 404);
+    throw ApiError.notFound('Job offer not found');
   }
 
   return job;
 };
-
-const populateCompany = (job) => job.populate('company', 'companyName industry logo');
 
 const getAllJobs = async (query = {}) => {
   const filter = { status: OfferStatus.OPEN };
@@ -54,11 +37,18 @@ const getAllJobs = async (query = {}) => {
     .sort({ createdAt: -1 });
 };
 
+const getMyJobs = async (userId) => {
+  const company = await findCompanyProfile(userId);
+  return JobOffer.find({ company: company._id })
+    .populate('company', 'companyName industry logo')
+    .sort({ createdAt: -1 });
+};
+
 const getJobById = async (jobId) => {
   const job = await JobOffer.findById(jobId);
 
   if (!job) {
-    throw createError('Job offer not found', 404);
+    throw ApiError.notFound('Job offer not found');
   }
 
   return populateCompany(job);
@@ -93,6 +83,7 @@ const updateJob = async (jobId, userId, data) => {
 const deleteJob = async (jobId, userId) => {
   const job = await findOwnedJob(jobId, userId);
   await job.deleteOne();
+  return job;
 };
 
 const closeJob = async (jobId, userId) => {
@@ -105,6 +96,7 @@ const closeJob = async (jobId, userId) => {
 
 module.exports = {
   getAllJobs,
+  getMyJobs,
   getJobById,
   createJob,
   updateJob,

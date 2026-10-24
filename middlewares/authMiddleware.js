@@ -32,7 +32,7 @@ const protect = async (req, res, next) => {
     }
 
     // Vérifier si le compte est actif
-    if (!user.isActive) {
+    if (!user.isActive || user.isDeleted) {
       return res.status(403).json({
         message: "Compte désactivé",
       });

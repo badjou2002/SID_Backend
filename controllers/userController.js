@@ -1,4 +1,6 @@
 const userService = require('../services/user.services');
+const CandidateProfile = require('../models/CandidateProfile');
+const { enqueueMatchingSync } = require('../services/matchingQueue');
 
 // Récupérer tous les utilisateurs
 const getAllUsers = async (req, res) => {
@@ -10,7 +12,7 @@ const getAllUsers = async (req, res) => {
       users
     });
   } catch (error) {
-    return res.status(400).json({
+    return res.status(error.statusCode || 400).json({
       success: false,
       message: error.message
     });
@@ -48,7 +50,7 @@ const updateUser = async (req, res) => {
       user
     });
   } catch (error) {
-    return res.status(400).json({
+    return res.status(error.statusCode || 400).json({
       success: false,
       message: error.message
     });
@@ -58,14 +60,18 @@ const updateUser = async (req, res) => {
 // Supprimer un utilisateur
 const deleteUser = async (req, res) => {
   try {
+    const candidateProfile = await CandidateProfile.findOne({ user: req.params.id }).select('_id');
     await userService.deleteUser(req.params.id);
+    if (candidateProfile) {
+      await enqueueMatchingSync({ entity: 'candidate', entityId: candidateProfile._id });
+    }
 
     return res.status(200).json({
       success: true,
       message: 'Utilisateur supprimé avec succès'
     });
   } catch (error) {
-    return res.status(404).json({
+    return res.status(error.statusCode || 404).json({
       success: false,
       message: error.message
     });
@@ -97,7 +103,7 @@ const updateUserStatus = async (req, res) => {
       user
     });
   } catch (error) {
-    return res.status(400).json({
+    return res.status(error.statusCode || 400).json({
       success: false,
       message: error.message
     });
@@ -149,7 +155,7 @@ const updateMyAccount = async (req, res) => {
       user
     });
   } catch (error) {
-    return res.status(400).json({
+    return res.status(error.statusCode || 400).json({
       success: false,
       message: error.message
     });
@@ -168,7 +174,7 @@ const deleteMyAccount = async (req, res) => {
       message: 'Compte supprimé avec succès'
     });
   } catch (error) {
-    return res.status(400).json({
+    return res.status(error.statusCode || 400).json({
       success: false,
       message: error.message
     });

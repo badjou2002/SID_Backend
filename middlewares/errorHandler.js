@@ -12,7 +12,9 @@
 
 module.exports = (err, req, res, next) => {
   console.error(err);
-  res.status(err.statusCode || 500).json({
+  const statusCode = err.statusCode
+    || (err.name === 'CastError' || err.name === 'ValidationError' ? 400 : 500);
+  res.status(statusCode).json({
     success: false,
     message: err.message || 'Internal Server Error'
   });

@@ -9,7 +9,178 @@ npm install
 npm run dev
 ```
 
-Le serveur écoute par défaut sur `http://localhost:5000` (ou sur le port défini dans la configuration locale). La configuration locale doit contenir les paramètres MongoDB, JWT et SMTP nécessaires. Ne partagez et ne commitez jamais les secrets.
+## Administration et salons de l'emploi
+
+Les routes du tableau de bord nécessitent un jeton Bearer valide associé à un
+utilisateur ayant le rôle `ADMIN` :
+
+- `GET /api/admin/news` liste les actualités publiées et les brouillons.
+- `GET /api/admin/stats` retourne les nombres d'offres, candidatures, actualités
+  et salons calculés à partir de MongoDB.
+- `GET /api/admin/ai-insights?days=7|30|90` analyse les messages de l'assistant
+  sur la période demandée (7 jours par défaut).
+- `DELETE /api/news/:id` autorise également l'administrateur à supprimer toute
+  actualité, même si elle appartient à une autre entreprise.
+
+`GET /api/job-fairs` liste les salons stockés dans la collection `jobfairs`.
+Chaque document contient un nom, un lieu, un organisateur, des dates de début et
+de fin, ainsi que les nombres d'entreprises et de participants. Les recruteurs
+peuvent utiliser `GET /api/jobs/mine` pour afficher toutes leurs offres, y
+compris celles qui sont fermées.
+
+### `POST /api/job-fairs`
+
+Réservée à `ADMIN`. `name`, `location`, `organizer`, `startDate` et `endDate`
+sont requis; les dates doivent être ISO 8601. `companiesCount` et
+`participantsCount` sont des entiers facultatifs supérieurs ou égaux à zéro.
+
+```json
+{
+  "name": "Salon de l'emploi 2026",
+  "location": "Sfax",
+  "organizer": "JCI Sfax",
+  "startDate": "2026-11-10T09:00:00.000Z",
+  "endDate": "2026-11-10T17:00:00.000Z",
+  "companiesCount": 20,
+  "participantsCount": 300
+}
+```
+
+Réponse `201` : salon créé.
+
+## Intégration SID_Agent et indexation
+
+Le backend relaie la façade et les workflows autorisés de SID_Agent sous
+`/api/ai`, sans remplacer les routes métier déjà présentes. L'inventaire complet
+des méthodes, chemins et rôles figure ci-dessous. Les opérations privées au
+service, dont la synchronisation immédiate des index, sont appelées par le worker
+et ne sont pas exposées comme routes utilisateur du proxy.
+
+Les routes IA contrôlent le jeton et les rôles dans SID_Backend, puis transmettent
+l'identifiant MongoDB vérifié (`X-Platform-User-Id`) avec la clé de service.
+SID_Agent vérifie cette clé avant d'accepter l'identifiant et recharge le rôle et
+le statut du compte depuis la base partagée; aucun JWT n'est validé dans SID_Agent.
+Les opérations réservées au service sont limitées à `ADMIN`.
+Configurer `SID_AGENT_URL` (URL de base du service, sans suffixe `/api`),
+`SID_SERVICE_API_KEY` (même valeur que SID_Agent). Les deux services doivent lire
+la même base MongoDB pour que les offres et les profils restent cohérents.
+
+Les créations et modifications de profils candidats, offres et entreprises
+placent une tâche Agenda dans la collection MongoDB `sidAgentAgendaJobs` de la
+base déjà configurée par `MONGO_URI`. Le worker appelle ensuite l'API de
+synchronisation de SID_Agent, qui recalcule les index vectoriels candidats/offres
+dans Qdrant. Aucun vecteur n'est accepté depuis le navigateur et les salons de
+l'emploi ne sont pas vectorisés (SID_Agent ne fournit pas d'API d'embedding pour
+les salons).
+
+Pour le développement local, démarrer MongoDB, SID_Agent, le serveur backend et
+le worker Agenda :
+
+```powershell
+npm run dev
+npm run worker:matching
+```
+
+Configurer `MONGO_URI` (commun à l'application et au worker), `SID_AGENT_URL`,
+`SID_SERVICE_API_KEY` et `SID_AGENT_SYNC_TIMEOUT_MS` dans l'environnement du
+backend. Agenda utilise cette même base MongoDB, dans sa collection dédiée
+`sidAgentAgendaJobs`; aucun Redis séparé n'est requis. Exécuter le worker dans un
+processus supervisé distinct. La réponse
+des API de création/modification indique `indexing.status` (`queued` ou
+`disabled`) ; un échec de mise en file retourne une erreur explicite et indique
+que l'enregistrement métier a déjà été sauvegardé. Pour vérifier l'index,
+utiliser `GET /api/ai/v1/matching/status` en tant qu'administrateur.
+
+Le serveur écoute par défaut sur `http://localhost:5000` (ou sur le port défini
+dans la configuration locale). La configuration locale doit contenir les
+paramètres MongoDB, JWT et SMTP nécessaires. Ne partagez et ne commitez jamais
+les secrets.
+
+### Routes IA relayées par SID_Backend
+
+Ces routes sont accessibles sous `/api/ai`. Pour toutes les routes avec rôle,
+utiliser `Authorization: Bearer <accessToken>` obtenu via `/api/auth/login`.
+SID_Backend valide le compte et le rôle avant de relayer la requête. N'envoyez
+pas directement `X-Service-Key` ou `X-Platform-User-Id` depuis un client.
+
+| Méthode | Route | Rôle | Usage |
+|---|---|---|---|
+| `POST` | `/api/ai/agent/parse-cv` | CANDIDATE | Envoie un PDF brut pour extraction; query `language=fr\|en`, `Idempotency-Key` requis. |
+| `POST` | `/api/ai/agent/generate-pack` | CANDIDATE | Génère en arrière-plan un dossier personnalisé pour une offre SID. |
+| `POST` | `/api/ai/agent/chat` | CANDIDATE, RECRUITER | Répond à un tour de conversation; requiert `Idempotency-Key`. |
+| `POST` | `/api/ai/agent/source-candidates` | RECRUITER | Recherche jusqu'à cinq candidats avec `offer_id` ou `job_description`. |
+| `POST` | `/api/ai/agent/score-application` | RECRUITER | Calcule la compatibilité d'un candidat avec une offre. |
+| `POST` | `/api/ai/agent/evaluate-profile` | CANDIDATE | Évalue le profil accepté et donne des recommandations. |
+| `POST` | `/api/ai/agent/candidate-refs/resolve` | RECRUITER | Résout un pseudonyme candidat rattaché à l'entreprise du recruteur. |
+| `GET` | `/api/ai/agent/capabilities` | ADMIN | Retourne les capacités IA configurées. |
+| `POST` | `/api/ai/v1/cv-imports` | CANDIDATE | Importe un PDF (octets bruts); `Idempotency-Key` requis. |
+| `GET`, `PUT`, `DELETE` | `/api/ai/v1/cv-imports/:importId` | CANDIDATE | Lit, corrige ou supprime un import de CV. |
+| `GET` | `/api/ai/v1/cv-imports/:importId/versions/:version` | CANDIDATE | Lit une version antérieure du CV. |
+| `POST` | `/api/ai/v1/cv-imports/:importId/accept` | CANDIDATE | Accepte la version relue et crée un profil. |
+| `POST` | `/api/ai/v1/profiles` | CANDIDATE | Crée un profil IA à partir de texte. |
+| `GET`, `PUT` | `/api/ai/v1/profiles/:profileId` | CANDIDATE | Lit ou modifie un profil IA. |
+| `GET` | `/api/ai/v1/profiles/:profileId/versions/:version` | CANDIDATE | Lit une version antérieure du profil. |
+| `POST` | `/api/ai/v1/profiles/:profileId/accept` | CANDIDATE | Accepte une version du profil. |
+| `GET` | `/api/ai/v1/profiles/:profileId/evaluation` | CANDIDATE | Calcule la complétude déterministe du profil. |
+| `POST` | `/api/ai/v1/application-drafts/preview` | ADMIN | Génère un aperçu non persisté de lettre. |
+| `POST` | `/api/ai/v1/application-drafts` | CANDIDATE | Met en file la génération d'une lettre; `Idempotency-Key` requis. |
+| `POST` | `/api/ai/v1/application-dossiers` | CANDIDATE | Met en file la génération d'un dossier complet; `Idempotency-Key` requis. |
+| `GET`, `PUT` | `/api/ai/v1/application-drafts/:draftId` | CANDIDATE | Lit ou modifie un brouillon. |
+| `GET` | `/api/ai/v1/application-drafts/:draftId/versions/:version` | CANDIDATE | Lit une ancienne version du brouillon. |
+| `PUT` | `/api/ai/v1/application-drafts/:draftId/evidence` | CANDIDATE | Corrige les preuves du dossier. |
+| `POST` | `/api/ai/v1/application-drafts/:draftId/approvals` | CANDIDATE | Enregistre le consentement humain; n'envoie rien. |
+| `GET` | `/api/ai/v1/tasks/:taskId` | CANDIDATE | Consulte l'état d'une génération asynchrone. |
+| `POST` | `/api/ai/v1/conversations` | CANDIDATE, RECRUITER | Crée une conversation persistante. |
+| `GET`, `DELETE` | `/api/ai/v1/conversations/:conversationId` | CANDIDATE, RECRUITER | Lit ou supprime une conversation appartenant à l'utilisateur. |
+| `POST` | `/api/ai/v1/conversations/:conversationId/turns` | CANDIDATE, RECRUITER | Ajoute un tour; `Idempotency-Key` requis. |
+| `POST` | `/api/ai/v1/knowledge/search` | ADMIN | Recherche dans la base de connaissances. |
+| `GET` | `/api/ai/v1/knowledge/status` | ADMIN | État de l'index de connaissances. |
+| `GET` | `/api/ai/v1/operations/status` | ADMIN | État des files et fournisseurs. |
+| `GET` | `/api/ai/v1/matching/status` | ADMIN | État des index de matching. |
+| `GET` | `/api/ai/v1/ai/status` | ADMIN | État des fournisseurs IA et quotas. |
+| `GET` | `/api/ai/health` | Public | Liveness de SID_Agent. |
+| `GET` | `/api/ai/health/ready` | Public | Readiness des dépendances configurées. |
+| `GET` | `/api/ai/` | Public | Informations sur le service SID_Agent. |
+
+Les corps attendus, paramètres, réponses détaillées et codes d'erreur sont
+documentés dans la [référence API SID_Agent](../ai_api/SID_Agent/docs/api-reference.md).
+La synchronisation immédiate des index est une route interne du service:
+`POST /api/v1/matching/sync`; elle est déclenchée par le worker Agenda et non par
+le proxy public.
+
+#### Exemple : créer une conversation puis envoyer un message
+
+```bash
+curl -X POST "http://localhost:5000/api/ai/v1/conversations" \
+  -H "Authorization: Bearer <accessToken>" \
+  -H "Content-Type: application/json" \
+  -d "{\"language\":\"fr\"}"
+```
+
+Utiliser ensuite le `id` de conversation retourné et sa `revision` courante:
+
+```bash
+curl -X POST "http://localhost:5000/api/ai/agent/chat" \
+  -H "Authorization: Bearer <accessToken>" \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: chat-unique-0001" \
+  -d "{\"conversation_id\":\"<conversationId>\",\"expected_revision\":0,\"message\":\"Je cherche un stage PFE en développement web à Sfax\"}"
+```
+
+#### Exemple : envoyer un CV PDF
+
+```bash
+curl -X POST "http://localhost:5000/api/ai/agent/parse-cv?language=fr" \
+  -H "Authorization: Bearer <accessToken>" \
+  -H "Content-Type: application/pdf" \
+  -H "Idempotency-Key: cv-unique-0001" \
+  --data-binary "@cv.pdf"
+```
+
+Les générations asynchrones répondent avec un `task_id`, `poll_url` ou un en-tête
+`Location`. Consulter `GET /api/ai/v1/tasks/:taskId` jusqu'à l'état final; relire
+et corriger le résultat avant approbation. L'approbation IA ne soumet pas une
+candidature.
 
 ## Utiliser l'API
 
@@ -67,6 +238,19 @@ Entrée :
 ```
 
 Réponse `200` : `message` et `user` (`id`, `email`, `role`, `isEmailVerified`). Le code expire après 10 minutes.
+
+### `POST /api/auth/resend-verification-code`
+
+Entrée :
+
+```json
+{
+  "email": "candidate@example.com"
+}
+```
+
+Réponse `200` : message de confirmation; le code est renvoyé si le compte peut
+être vérifié.
 
 ### `POST /api/auth/login`
 
@@ -148,11 +332,13 @@ Entrée :
 
 Réponse `200` : message de confirmation. Le refresh token existant est invalidé.
 
-## Profils — `/api/profiles`
+## Profils — `/api/v1/profiles`
 
-Toutes les routes suivantes sont réservées au rôle `RECRUITER`. Un recruteur ne peut créer qu'un seul profil entreprise.
+Les routes `/company` sont réservées à `RECRUITER`. Les routes de profil candidat
+sont réservées à `CANDIDATE`, sauf la liste consultable par `RECRUITER` et
+`ADMIN`.
 
-### `POST /api/profiles/company`
+### `POST /api/v1/profiles/company`
 
 Entrée :
 
@@ -170,23 +356,55 @@ Entrée :
 
 Réponse `201` : `{ "success": true, "message": "...", "profile": { ... } }`. `companyName` est requis; les autres champs sont facultatifs.
 
-### `GET /api/profiles/company/me`
+### `GET /api/v1/profiles/company/me`
 
 Entrée : aucune.
 
 Réponse `200` : `{ "success": true, "profile": { ... } }`.
 
-### `PUT /api/profiles/company/me`
+### `PUT /api/v1/profiles/company/me`
 
 Entrée : un ou plusieurs champs du profil parmi `companyName`, `description`, `industry`, `address`, `phone`, `website` et `logo`.
 
 Réponse `200` : `{ "success": true, "message": "...", "profile": { ... } }`.
 
-### `DELETE /api/profiles/company/me`
+### `DELETE /api/v1/profiles/company/me`
 
 Entrée : aucune.
 
 Réponse `200` : `{ "success": true, "message": "Profil entreprise supprimé avec succès" }`.
+
+### `GET /api/v1/profiles`
+
+Réservée aux rôles `RECRUITER` et `ADMIN`. Paramètres facultatifs : `q`
+(recherche de profils) et `city`.
+
+Exemple : `GET /api/v1/profiles?q=Python&city=Sfax`.
+
+### `GET /api/v1/profiles/candidate/me`
+
+Réservée au candidat connecté. Retourne son profil candidat.
+
+### `POST /api/v1/profiles/candidate/me`
+
+Réservée au candidat. `fullName` est requis; `phone`, `city`, `parsedSkills`,
+`parsedExperiences` et `parsedEducation` sont facultatifs.
+
+```json
+{
+  "fullName": "Amira Ben Salah",
+  "city": "Sfax",
+  "parsedSkills": ["Python", "MongoDB"],
+  "parsedExperiences": [],
+  "parsedEducation": []
+}
+```
+
+### `PUT /api/v1/profiles/candidate/me`
+
+Réservée au candidat. Modifie les champs de son profil. Les champs `user`,
+`rawCvUrl`, `cvEmbedding`, `completenessScore` et `isNewCandidate` sont en
+lecture seule et ne peuvent pas être envoyés.
 
 ## Entreprises — `/api/companies`
 
@@ -252,6 +470,11 @@ Route publique. Entrée : identifiant de l'offre dans l'URL.
 
 Réponse `200` : `{ "success": true, "data": { ... } }`.
 
+### `GET /api/jobs/mine`
+
+Réservée au recruteur connecté. Retourne toutes ses offres, y compris celles qui
+sont fermées.
+
 ### `POST /api/jobs`
 
 Réservée au recruteur ayant un profil entreprise.
@@ -289,11 +512,11 @@ Réservée au recruteur propriétaire. Aucun corps requis.
 
 Réponse `200` : `{ "success": true, "data": { ... "status": "CLOSED" } }`.
 
-## Candidatures — `/api/applications`
+## Candidatures — `/api/v1/applications`
 
 Les statuts sont `PENDING`, `REVIEWED`, `ACCEPTED` et `REJECTED`. Un candidat ne peut postuler qu'à une offre ouverte et une seule fois à une même offre.
 
-### `POST /api/applications`
+### `POST /api/v1/applications`
 
 Réservée au rôle `CANDIDATE`.
 
@@ -307,25 +530,32 @@ Entrée :
 }
 ```
 
-`jobOfferId` est requis; `customCvUrl` et `motivationLetter` sont facultatifs.
+`jobOfferId` (ou `jobOffer`) et `motivationLetter` sont requis; `customCvUrl` est
+facultatif.
 
 Réponse `201` : `{ "success": true, "data": { ... } }`. La candidature commence au statut `PENDING`.
 
-### `GET /api/applications/candidate/:candidateId`
+### `GET /api/v1/applications/my-applications`
+
+Réservée au candidat connecté. Paramètre facultatif `status` : `PENDING`,
+`REVIEWED`, `ACCEPTED` ou `REJECTED`.
+
+### `GET /api/v1/applications/candidate/:candidateId`
 
 Réservée au candidat propriétaire du profil. Entrée : identifiant du profil candidat dans l'URL.
 
 Réponse `200` : `{ "success": true, "count": 1, "data": [{ ... }] }`.
 
-### `GET /api/applications/job/:jobOfferId`
+### `GET /api/v1/applications/job/:jobOfferId`
 
 Réservée au recruteur propriétaire de l'offre. Entrée : identifiant de l'offre dans l'URL.
 
 Réponse `200` : `{ "success": true, "count": 1, "data": [{ ... }] }`.
 
-### `PATCH /api/applications/:id/status`
+### `PATCH /api/v1/applications/:id/status`
 
-Réservée au recruteur propriétaire de l'offre.
+Réservée au recruteur propriétaire de l'offre ou à `ADMIN`. Les statuts acceptés
+sont `REVIEWED`, `ACCEPTED` et `REJECTED`.
 
 Entrée :
 
@@ -337,7 +567,7 @@ Entrée :
 
 Réponse `200` : `{ "success": true, "data": { ... } }`.
 
-### `PATCH /api/applications/:id/validate`
+### `PATCH /api/v1/applications/:id/validate`
 
 Réservée au candidat propriétaire. Aucun corps requis. Seules les candidatures au statut `ACCEPTED` peuvent être validées.
 
